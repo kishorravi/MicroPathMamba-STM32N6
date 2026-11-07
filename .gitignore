@@ -15,3 +15,5 @@ paper/*.bbl
 paper/*.blg
 paper/*.out
 paper/*.pdf
+paper/results_summary.md
+runs_smoke/

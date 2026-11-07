@@ -8,6 +8,8 @@
 \newtheorem{proposition}{Proposition}
 \newcommand{\XX}{\textcolor{red}{XX}}
 \newcommand{\todo}[1]{\textcolor{blue}{[#1]}}
+% numbers below are generated from real results by scripts/fill_manuscript.py
+\input{results_macros}
 \journal{Computers in Biology and Medicine}
 
 \begin{document}
@@ -15,22 +17,22 @@
 
 \title{From GPU to Microcontroller: Benchmarking Vision Mamba Models and Distilling an NPU-Friendly State-Space Network for On-Device Colorectal Histopathology Classification on the STM32N6}
 
-\author[niche,hon]{Kishor Ravikumar\corref{cor1}}
+\author[nicheRS]{Kishor Ravikumar\corref{cor1}}
 \ead{ece.kishor@gmail.com}
 \author[niche]{R. S. Vinod Kumar}
 \author[kmea]{Bushara A. R.}
 \author[pp]{Amarjith C. K.}
 \cortext[cor1]{Corresponding author.}
-\address[niche]{Department of Electronics and Communication Engineering, Noorul Islam Centre for Higher Education (NICHE), Kumaracoil, Tamil Nadu, India}
-\address[hon]{Honeywell Aerospace Technologies, Edinburgh, United Kingdom \todo{keep only with employer publication clearance}}
+\address[nicheRS]{Research Scholar, Department of Electronics and Communication Engineering, Noorul Islam Centre for Higher Education (NICHE), Kumaracoil, Nagercoil, Tamil Nadu, India}
+\address[niche]{Department of Electronics and Communication Engineering, Noorul Islam Centre for Higher Education (NICHE), Kumaracoil, Nagercoil, Tamil Nadu, India}
 \address[kmea]{Department of Computer Science and Engineering, KMEA Engineering College, Kochi, Kerala, India}
 \address[pp]{Purchasing Power, Atlanta, Georgia, USA}
 
 \begin{abstract}
 Vision Mamba models capture long-range tissue context in time that grows only linearly with the number of patches. However, they depend on custom GPU kernels, and it is unclear whether they can run on the low-cost microcontrollers that portable digital-microscopy devices need. We study this question end to end for nine-class colorectal histopathology tissue classification.
 First, we benchmark VMamba-T and three MambaVision variants (T, T2, S) against size-matched convolutional and Transformer baselines. We use identical stratified three-fold cross-validation on NCT-CRC-HE-100K and external testing on the patient-independent CRC-VAL-HE-7K set, with three seeds per model.
-Second, we analyse whether every model can be deployed on the STM32N6 microcontroller and its Neural-ART neural processing unit (NPU), recording memory, operator mapping and failure modes. Off-the-shelf Mamba backbones need \XX{}\,MB of INT8 weights against 4.2\,MB of on-chip RAM, and \XX\% of their operators fall back to the CPU.
-Third, we propose MicroPathMamba, a 0.95\,M-parameter hybrid network. In its MambaVision-style mixer, the bidirectional selective scan is rewritten in a static matrix (state-space-duality) form that uses only matrix multiplication and element-wise operators; we prove this form is exactly equivalent to the recurrence. Distilled from the best Mamba teacher and quantized to INT8, MicroPathMamba reaches \XX\% accuracy and \XX{} macro-F1 on CRC-VAL-HE-7K, versus \XX\% for its teacher. On the STM32N6570-DK it runs in \XX\,ms using \XX\,mJ per patch and \XX\,MB of RAM.
+Second, we analyse whether every model can be deployed on the STM32N6 microcontroller and its Neural-ART neural processing unit (NPU), recording memory, operator mapping and failure modes. Off-the-shelf Mamba backbones need \resMambaWeightsMB\,MB of INT8 weights against 4.2\,MB of on-chip RAM, and \resMambaFallbackPct\% of their compute epochs fall back to the CPU.
+Third, we propose MicroPathMamba, a 0.95\,M-parameter hybrid network. In its MambaVision-style mixer, the bidirectional selective scan is rewritten in a static matrix (state-space-duality) form that uses only matrix multiplication and element-wise operators; we prove this form is exactly equivalent to the recurrence. Distilled from the best Mamba teacher and quantized to INT8, MicroPathMamba reaches \resStudentExtAcc\% accuracy and \resStudentExtFone{} macro-F1 on CRC-VAL-HE-7K (\resStudentIntEightAcc\% after INT8 quantization), versus \resTeacherExtAcc\% for its \resTeacherName{} teacher. On the STM32N6570-DK it runs in \resStudentLatency\,ms using \resStudentEnergy\,mJ per patch and \resStudentRAM\,MB of RAM.
 These results show that the accuracy benefit of state-space models can be carried down to a microcontroller-class NPU for point-of-care histopathology screening.
 \end{abstract}
 
@@ -81,7 +83,7 @@ The Mamba teachers are VMamba-T~\cite{liu2024vmamba} and MambaVision-T, -T2 and 
 Every model shares one training recipe: AdamW (learning rate $3\times10^{-4}$, weight decay 0.05), a one-cycle schedule, 30 epochs with early stopping (patience 8) on validation loss, batch size 64, label smoothing 0.1, mixed precision, and identical augmentation (random resized crop at scale 0.8--1, horizontal and vertical flips, $90^\circ$ rotation, mild colour jitter).
 
 \subsection{Deployability analysis (Tier B)}
-Each trained model is exported to ONNX (opset 17) with a static $1\times3\times224\times224$ input, quantized to INT8, and analysed with ST Edge AI Core v\XX{} for the STM32N6 Neural-ART target. Quantization uses QDQ format, per-channel weights and MinMax calibration on 512 training patches. MambaVision's CUDA selective scan is replaced by the mathematically identical pure-PyTorch reference scan before export. We record the following for each model:
+Each trained model is exported to ONNX (opset 17) with a static $1\times3\times224\times224$ input, quantized to INT8, and analysed with ST Edge AI Core v\resSTVersion{} for the STM32N6 Neural-ART target. Quantization uses QDQ format, per-channel weights and MinMax calibration on 512 training patches. MambaVision's CUDA selective scan is replaced by the mathematically identical pure-PyTorch reference scan before export. We record the following for each model:
 \begin{itemize}
 \item whether analysis succeeds;
 \item weight and activation memory;
@@ -155,31 +157,11 @@ We measure latency with on-target validation (mean, SD and p95 over 100 runs). E
 \section{Results}
 \subsection{Tier A: accuracy of teachers and baselines}
 \begin{table}[t]\centering\small
-\caption{Classification on CRC-VAL-HE-7K (external) and internal 3-fold CV, mean $\pm$ SD over 3 folds $\times$ 3 seeds. Params and GMACs at $224^2$; $^{\dagger}$GMACs as reported by the original authors.}
+\caption{Classification on CRC-VAL-HE-7K (external) and internal 3-fold CV, mean $\pm$ SD over all runs (3 folds $\times$ seeds; ``runs'' gives the count). Best external accuracy in bold. $p$: exact McNemar test against the distilled student on the external set. Params and GMACs at $224^2$ with a 9-class head; $^{\dagger}$GMACs as reported by the original authors, because fvcore cannot count selective-scan kernels.}
 \label{tab:tierA}
-\resizebox{\linewidth}{!}{%
-\begin{tabular}{lrrcccc}
-\toprule
-Model & Params (M) & GMACs & CV Acc (\%) & Ext Acc (\%) & Ext macro-F1 & Ext MCC \\
-\midrule
-VMamba-T & 30.0 & 4.9$^{\dagger}$ & \XX & \XX & \XX & \XX \\
-MambaVision-T & 31.8 & 4.4$^{\dagger}$ & \XX & \XX & \XX & \XX \\
-MambaVision-T2 & 35.1 & 5.1$^{\dagger}$ & \XX & \XX & \XX & \XX \\
-MambaVision-S & 50.1 & 7.5$^{\dagger}$ & \XX & \XX & \XX & \XX \\
-ConvNeXt V2-T & 28.6 & 4.5 & \XX & \XX & \XX & \XX \\
-Swin-T & 28.3 & 4.5 & \XX & \XX & \XX & \XX \\
-EfficientViT-B1 & 9.1 & 0.5 & \XX & \XX & \XX & \XX \\
-ResNet-50 & 25.6 & 4.1 & \XX & \XX & \XX & \XX \\
-MobileNetV4-Conv-M & 9.7 & 1.0 & \XX & \XX & \XX & \XX \\
-MobileNetV3-Small & 2.5 & 0.06 & \XX & \XX & \XX & \XX \\
-\midrule
-MicroPathMamba-CNN (no SSM) & \XX & \XX & \XX & \XX & \XX & \XX \\
-MicroPathMamba (scratch) & 0.95 & \XX & \XX & \XX & \XX & \XX \\
-\textbf{MicroPathMamba (KD)} & \textbf{0.95} & \XX & \XX & \XX & \XX & \XX \\
-\bottomrule
-\end{tabular}}
+\input{tables/tierA}
 \end{table}
-\todo{Check every parameter/GMAC value against \texttt{results/complexity.csv}; the published figures above are for 1000-class ImageNet heads.} Describe:
+\todo{Write from paper/results\_summary.md:}
 \begin{itemize}
 \item the ranking on the external set;
 \item whether the Mamba teachers beat the CNN and Transformer baselines significantly (McNemar);
@@ -192,36 +174,14 @@ MicroPathMamba (scratch) & 0.95 & \XX & \XX & \XX & \XX & \XX \\
 \begin{table}[t]\centering\small
 \caption{ST Edge AI Core analysis for the STM32N6 Neural-ART target (INT8, $224^2$).}
 \label{tab:tierB}
-\resizebox{\linewidth}{!}{%
-\begin{tabular}{lcccccc}
-\toprule
-Model & Status & Weights (MB) & Activ. (MB) & Fits 4.2\,MB & NPU epochs (\%) & Fallback ops \\
-\midrule
-VMamba-T & \XX & \XX & \XX & \XX & \XX & \XX \\
-MambaVision-T & \XX & \XX & \XX & \XX & \XX & \XX \\
-MobileNetV3-Small & \XX & \XX & \XX & \XX & \XX & \XX \\
-MobileNetV4-Conv-M & \XX & \XX & \XX & \XX & \XX & \XX \\
-MicroPathMamba & \XX & \XX & \XX & \XX & \XX & \XX \\
-\bottomrule
-\end{tabular}}
+\input{tables/tierB}
 \end{table}
 
 \subsection{Tier C: on-device performance}
 \begin{table}[t]\centering\small
-\caption{Measured on STM32N6570-DK (CPU 800\,MHz, NPU \XX\,MHz, ST Edge AI Core v\XX). Accuracy on CRC-VAL-HE-7K.}
+\caption{Measured on STM32N6570-DK (CPU 800\,MHz, NPU \resNPUMHz\,MHz, ST Edge AI Core v\resSTVersion). Accuracy on CRC-VAL-HE-7K; $\Delta$ in percentage points; Agree: top-1 agreement between board and host INT8 predictions on 1\,000 external patches.}
 \label{tab:tierC}
-\resizebox{\linewidth}{!}{%
-\begin{tabular}{lccccccc}
-\toprule
-Model & FP32 Acc & INT8 Acc & $\Delta$ & Latency (ms) & Energy (mJ) & RAM (MB) & Agree (\%) \\
-\midrule
-MobileNetV3-Small & \XX & \XX & \XX & \XX & \XX & \XX & \XX \\
-MobileNetV4-Conv-S & \XX & \XX & \XX & \XX & \XX & \XX & \XX \\
-MicroPathMamba-CNN & \XX & \XX & \XX & \XX & \XX & \XX & \XX \\
-MicroPathMamba (INT8) & \XX & \XX & \XX & \XX & \XX & \XX & \XX \\
-MicroPathMamba (decay FP) & \XX & \XX & \XX & \XX & \XX & \XX & \XX \\
-\bottomrule
-\end{tabular}}
+\input{tables/tierC}
 \end{table}
 
 \subsection{Ablations}
