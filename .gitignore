@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+runs/
+results/
+deploy/
+folds.csv
+*.pt
+*.pth
+*.pth.tar
+*.onnx
+stm32/gen/
+paper/*.aux
+paper/*.log
+paper/*.bbl
+paper/*.blg
+paper/*.out
+paper/*.pdf

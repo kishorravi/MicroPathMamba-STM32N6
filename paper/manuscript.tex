@@ -1,0 +1,268 @@
+%% Manuscript skeleton for Elsevier journals (Computers in Biology and Medicine,
+%% Engineering Applications of AI, Biomedical Signal Processing and Control, ...).
+%% Compile on Overleaf with pdfLaTeX + BibTeX. Every "XX" is a value to fill from results/.
+\documentclass[preprint,12pt]{elsarticle}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs,multirow,graphicx,xcolor}
+\usepackage[hidelinks]{hyperref}
+\newtheorem{proposition}{Proposition}
+\newcommand{\XX}{\textcolor{red}{XX}}
+\newcommand{\todo}[1]{\textcolor{blue}{[#1]}}
+\journal{Computers in Biology and Medicine}
+
+\begin{document}
+\begin{frontmatter}
+
+\title{From GPU to Microcontroller: Benchmarking Vision Mamba Models and Distilling an NPU-Friendly State-Space Network for On-Device Colorectal Histopathology Classification on the STM32N6}
+
+\author[niche,hon]{Kishor Ravikumar\corref{cor1}}
+\ead{ece.kishor@gmail.com}
+\author[niche]{R. S. Vinod Kumar}
+\author[kmea]{Bushara A. R.}
+\author[pp]{Amarjith C. K.}
+\cortext[cor1]{Corresponding author.}
+\address[niche]{Department of Electronics and Communication Engineering, Noorul Islam Centre for Higher Education (NICHE), Kumaracoil, Tamil Nadu, India}
+\address[hon]{Honeywell Aerospace Technologies, Edinburgh, United Kingdom \todo{keep only with employer publication clearance}}
+\address[kmea]{Department of Computer Science and Engineering, KMEA Engineering College, Kochi, Kerala, India}
+\address[pp]{Purchasing Power, Atlanta, Georgia, USA}
+
+\begin{abstract}
+Vision Mamba models capture long-range tissue context in time that grows only linearly with the number of patches. However, they depend on custom GPU kernels, and it is unclear whether they can run on the low-cost microcontrollers that portable digital-microscopy devices need. We study this question end to end for nine-class colorectal histopathology tissue classification.
+First, we benchmark VMamba-T and three MambaVision variants (T, T2, S) against size-matched convolutional and Transformer baselines. We use identical stratified three-fold cross-validation on NCT-CRC-HE-100K and external testing on the patient-independent CRC-VAL-HE-7K set, with three seeds per model.
+Second, we analyse whether every model can be deployed on the STM32N6 microcontroller and its Neural-ART neural processing unit (NPU), recording memory, operator mapping and failure modes. Off-the-shelf Mamba backbones need \XX{}\,MB of INT8 weights against 4.2\,MB of on-chip RAM, and \XX\% of their operators fall back to the CPU.
+Third, we propose MicroPathMamba, a 0.95\,M-parameter hybrid network. In its MambaVision-style mixer, the bidirectional selective scan is rewritten in a static matrix (state-space-duality) form that uses only matrix multiplication and element-wise operators; we prove this form is exactly equivalent to the recurrence. Distilled from the best Mamba teacher and quantized to INT8, MicroPathMamba reaches \XX\% accuracy and \XX{} macro-F1 on CRC-VAL-HE-7K, versus \XX\% for its teacher. On the STM32N6570-DK it runs in \XX\,ms using \XX\,mJ per patch and \XX\,MB of RAM.
+These results show that the accuracy benefit of state-space models can be carried down to a microcontroller-class NPU for point-of-care histopathology screening.
+\end{abstract}
+
+\begin{keyword}
+Vision Mamba \sep State space models \sep Colorectal cancer \sep Histopathology \sep Edge AI \sep STM32N6 \sep Knowledge distillation \sep INT8 quantization
+\end{keyword}
+\end{frontmatter}
+
+%% ------------------------------------------------------------------------------
+\section{Introduction}
+Colorectal cancer is among the most frequently diagnosed and deadliest malignancies worldwide, and histopathological examination of H\&E-stained tissue remains the diagnostic reference standard. Deep networks now classify colorectal tissue patches with high accuracy~\cite{kather2019}. Most of these systems, however, assume a GPU workstation or a cloud service. Low-resource laboratories and portable digital-microscopy devices instead need on-device inference, where latency, privacy and connectivity constraints rule out the cloud.
+
+Selective state space models (SSMs), popularised by Mamba~\cite{gu2023mamba}, model long sequences in linear time. Their vision variants, Vision Mamba~\cite{zhu2024vim}, VMamba~\cite{liu2024vmamba} and the hybrid MambaVision~\cite{hatamizadeh2025mambavision}, reach Transformer-level accuracy at lower cost. In histopathology, Mamba-based classifiers such as Vim4Path~\cite{nasirisarvi2024vim4path}, MedMamba~\cite{yue2024medmamba} and XtraLight-MedMamba~\cite{sultana2026xtralight} have reported strong results. All of them run on GPUs.
+
+Moving these models to microcontrollers is not straightforward. Their selective scan is implemented as a custom CUDA/Triton kernel with no standard ONNX export path~\cite{xu2025mambalite}. Their weights exceed microcontroller memory by an order of magnitude. And SSM activations are known to be fragile under INT8 quantization~\cite{chiang2025quamba}. Recent work has run small Mamba models on microcontrollers for keyword spotting, activity recognition~\cite{xu2025mambalite} and EEG~\cite{tegon2026femba}. To our knowledge, no study has deployed a vision Mamba on a microcontroller NPU, or measured what is lost in doing so, for histopathology.
+
+\paragraph{Contributions}
+\begin{enumerate}
+\item \textbf{Controlled benchmark.} We compare VMamba-T and MambaVision-T/T2/S with size-matched CNN and Transformer baselines on colorectal tissue classification. The protocol is identical for every model: three folds $\times$ three seeds, a patient-independent external test, calibration, and statistical testing.
+\item \textbf{Deployability analysis.} We analyse every model on the STM32N6 Neural-ART toolchain, quantifying memory, NPU/CPU operator mapping and failure modes of off-the-shelf Mamba backbones.
+\item \textbf{MicroPathMamba.} We propose an NPU-friendly hybrid state-space network whose bidirectional selective scan is expressed in a static matrix form (Proposition~\ref{prop:eq}). It contains no recurrent, cumulative-sum or custom operators, and fits in on-chip RAM after INT8 quantization.
+\item \textbf{Measured on-device results.} We distil MicroPathMamba from the best Mamba teacher, quantize it, and report latency, energy, memory, INT8 accuracy loss and board/host agreement measured on the STM32N6570-DK. We release the code\footnote{\url{https://github.com/kishorravi/MicroPathMamba-STM32N6}}.
+\end{enumerate}
+
+%% ------------------------------------------------------------------------------
+\section{Related work}
+\paragraph{Colorectal tissue classification}
+The NCT-CRC-HE-100K and CRC-VAL-HE-7K datasets~\cite{kather2019} are the standard benchmark for nine-class colorectal tissue classification. CNNs~\cite{he2016resnet}, vision Transformers~\cite{dosovitskiy2021vit,liu2021swin} and pathology foundation models~\cite{chen2024uni} all report high accuracy on them. Because internal accuracy is close to saturation, external validation and efficiency are now the more informative axes. \todo{add 6--8 recent CRC patch-classification papers, 2023--2026}
+
+\paragraph{Vision state space models}
+Mamba~\cite{gu2023mamba} introduced input-dependent (selective) SSM parameters. Mamba-2~\cite{dao2024ssd} showed that selective SSMs with scalar decay are equivalent to a structured masked attention, a property known as state space duality (SSD). For images, Vim~\cite{zhu2024vim} scans bidirectionally, VMamba~\cite{liu2024vmamba} uses four-direction 2D selective scanning, and MambaVision~\cite{hatamizadeh2025mambavision} combines convolutional early stages with Mamba and attention blocks in later stages.
+
+\paragraph{Tiny machine learning and Mamba on microcontrollers}
+MCUNet~\cite{lin2020mcunet} co-designed networks and inference engines for microcontrollers. NPU-equipped devices such as the STM32N6~\cite{st2024stm32n6} now run INT8 CNNs in real time. MambaLite-Micro~\cite{xu2025mambalite} ran a hand-written C Mamba runtime on STM32H7 and ESP32 for audio and activity data in FP32. FEMBA~\cite{tegon2026femba} deployed a quantized bidirectional Mamba for EEG on a RISC-V microcontroller. Quamba~\cite{chiang2025quamba} studied post-training quantization of selective SSMs. Our work differs in three ways: it targets vision, uses a commercial NPU compiler rather than a custom runtime, and addresses histopathology.
+
+%% ------------------------------------------------------------------------------
+\section{Methods}
+\subsection{Datasets and evaluation protocol}
+NCT-CRC-HE-100K contains 100\,000 Macenko-normalised~\cite{macenko2009} $224\times224$ H\&E patches from 86 slides, in nine classes (ADI, BACK, DEB, LYM, MUC, MUS, NORM, STR, TUM)~\cite{kather2019}. CRC-VAL-HE-7K contains 7\,180 patches from 50 different patients and is used only for external testing.
+
+We create one stratified three-fold split (seed 123) and reuse it for every model. Each model is trained three times per fold (seeds 1--3). Patient identifiers are not available for NCT-CRC-HE-100K, so the internal split is patch-level and likely optimistic. We therefore treat CRC-VAL-HE-7K as the primary result. \todo{optional: train on NCT-CRC-HE-100K-NONORM to test stain robustness}
+
+We report accuracy, balanced accuracy, macro precision, recall, specificity and F1, Matthews correlation coefficient (MCC), Cohen's $\kappa$, one-vs-rest macro AUC and expected calibration error (ECE, 15 bins)~\cite{guo2017calibration}. Results are given as mean $\pm$ SD over folds and seeds. On the external set we add bootstrap 95\% confidence intervals (2\,000 resamples) and an exact McNemar test against the deployed student~\cite{dietterich1998}.
+
+\subsection{Teachers and baselines (Tier A)}
+The Mamba teachers are VMamba-T~\cite{liu2024vmamba} and MambaVision-T, -T2 and -S~\cite{hatamizadeh2025mambavision}. The size-matched baselines are ConvNeXt~V2-T~\cite{woo2023convnextv2}, Swin-T~\cite{liu2021swin}, EfficientViT-B1~\cite{cai2023efficientvit} and ResNet-50~\cite{he2016resnet}. The microcontroller-class baselines are MobileNetV4-Conv-M~\cite{qin2024mobilenetv4} and MobileNetV3-Small~\cite{howard2019mobilenetv3}. All start from ImageNet-1k weights.
+
+Every model shares one training recipe: AdamW (learning rate $3\times10^{-4}$, weight decay 0.05), a one-cycle schedule, 30 epochs with early stopping (patience 8) on validation loss, batch size 64, label smoothing 0.1, mixed precision, and identical augmentation (random resized crop at scale 0.8--1, horizontal and vertical flips, $90^\circ$ rotation, mild colour jitter).
+
+\subsection{Deployability analysis (Tier B)}
+Each trained model is exported to ONNX (opset 17) with a static $1\times3\times224\times224$ input, quantized to INT8, and analysed with ST Edge AI Core v\XX{} for the STM32N6 Neural-ART target. Quantization uses QDQ format, per-channel weights and MinMax calibration on 512 training patches. MambaVision's CUDA selective scan is replaced by the mathematically identical pure-PyTorch reference scan before export. We record the following for each model:
+\begin{itemize}
+\item whether analysis succeeds;
+\item weight and activation memory;
+\item the fraction of compute epochs mapped to the NPU versus software on the Cortex-M55;
+\item the operators that fall back or are unsupported.
+\end{itemize}
+
+\subsection{MicroPathMamba (Tier C)}
+\paragraph{Selective SSM and its matrix form}
+Given a token sequence $x_t\in\mathbb{R}^{P}$, $t=1,\dots,L$, a selective SSM with scalar decay $A<0$ per head computes
+\begin{equation}
+h_t = a_t\,h_{t-1} + \Delta_t B_t x_t^{\top}, \qquad y_t = C_t^{\top} h_t, \qquad a_t = e^{\Delta_t A},
+\label{eq:rec}
+\end{equation}
+where $B_t, C_t\in\mathbb{R}^{N}$ and the step $\Delta_t>0$ are produced from the input. Define the cumulative log-decay $c_t=\sum_{k\le t}\Delta_k A$. Unrolling~\eqref{eq:rec} gives the matrix form $Y=(M\odot CB^{\top})(\Delta\odot X)$, with $M_{ij}=e^{c_i-c_j}$ for $i\ge j$ and $0$ otherwise~\cite{dao2024ssd}.
+
+\begin{proposition}\label{prop:eq}
+Let $\overrightarrow{y}$ be the output of the forward recurrence~\eqref{eq:rec}, and $\overleftarrow{y}$ the output of the backward recurrence $g_t=a_{t+1}g_{t+1}+\Delta_tB_tx_t^{\top}$, $\overleftarrow{y}_t=C_t^{\top}g_t$. Then the bidirectional output $\overrightarrow{y}+\overleftarrow{y}-\operatorname{diag}(CB^{\top})(\Delta\odot X)$ equals
+\begin{equation}
+Y_{\mathrm{bi}} = \big(\exp(-|c\,\mathbf{1}^{\top}-\mathbf{1}\,c^{\top}|)\odot CB^{\top}\big)\,(\Delta\odot X),
+\qquad c = (\Delta\odot A)\,U,
+\label{eq:bi}
+\end{equation}
+where $U$ is the constant upper-triangular matrix of ones.
+\end{proposition}
+\begin{proof}[Proof sketch]
+The forward recurrence contributes the lower triangle $e^{c_i-c_j}$ ($i\ge j$). The backward recurrence contributes $\prod_{k=i+1}^{j}a_k=e^{c_j-c_i}$ for $j\ge i$. Because $A<0$ and $\Delta>0$, $c$ is decreasing, so both terms equal $e^{-|c_i-c_j|}$. The diagonal appears in both and is subtracted once. Multiplying by $U$ realises the cumulative sum. We verified the identity numerically to a relative error of $10^{-15}$ (repository test).
+\end{proof}
+
+Equation~\eqref{eq:bi} replaces the recurrence and the cumulative-sum operator with \emph{MatMul, Mul, Sub, Abs} and \emph{Exp} on a fixed $L\times L$ matrix ($L=49$). These are static operators that an NPU compiler can schedule. In contrast, the reference scan unrolls into thousands of sequential nodes.
+
+\paragraph{Architecture}
+MicroPathMamba (Fig.~\ref{fig:arch}) has two parts:
+\begin{itemize}
+\item \textbf{Convolutional stages.} A MobileNetV2-style stem and inverted-residual stages~\cite{sandler2018mobilenetv2} (BatchNorm, ReLU6) reduce the $224\times224$ input to a $7\times7\times160$ map.
+\item \textbf{Mamba blocks.} Two MambaVision-style blocks follow. Each block applies BatchNorm, a $1\times1$ projection into two halves, and a $3\times3$ depthwise convolution with SiLU on each half. One half passes through the SSD mixer~\eqref{eq:bi} (4 heads, state size $N=16$). The other half takes a symmetric non-SSM branch, as in MambaVision~\cite{hatamizadeh2025mambavision}. The halves are concatenated, projected back with a $1\times1$ convolution, and followed by a convolutional MLP.
+\end{itemize}
+
+Three choices make the network quantization-friendly:
+\begin{itemize}
+\item BatchNorm replaces LayerNorm, so it folds into adjacent convolutions;
+\item the step size is bounded as $\Delta=\Delta_{\max}\,\sigma(\cdot)$ with $\Delta_{\max}=0.5$, instead of softplus;
+\item $A=-e^{A_{\log}}$ is constant-folded at export.
+\end{itemize}
+The network has 0.95\,M parameters (about 1\,MB at INT8). An ablation without the SSM blocks (\emph{MicroPathMamba-CNN}) isolates their contribution.
+
+\begin{figure}[t]\centering
+\fbox{\parbox{0.9\linewidth}{\centering\vspace{2.5cm}\todo{Fig.~1: architecture diagram (CNN stages $\rightarrow$ 2$\times$ SSD-Mamba blocks $\rightarrow$ head) with the matrix-form mixer inset}\vspace{2.5cm}}}
+\caption{MicroPathMamba. The selective scan in the mixer is computed as the static matrix product of Eq.~\eqref{eq:bi}.}
+\label{fig:arch}
+\end{figure}
+
+\paragraph{Knowledge distillation}
+The student is trained on the same folds with
+\begin{equation}
+\mathcal{L}=(1-\alpha)\,\mathrm{CE}_{\epsilon}(z_s,y)+\alpha\,\tau^{2}\,\mathrm{KL}\!\left(\sigma(z_t/\tau)\,\|\,\sigma(z_s/\tau)\right),
+\end{equation}
+where $\alpha=0.7$, $\tau=4$ and $\epsilon=0.1$~\cite{hinton2015kd}. The teacher $z_t$ is the best Tier-A Mamba model trained on the same fold and seed, so it never sees the student's validation fold.
+
+\paragraph{Quantization and deployment}
+The student is exported to ONNX and quantized to INT8 using the QDQ format with per-channel weights~\cite{jacob2018quantization}, calibrated on 512 training patches. We compare two variants:
+\begin{enumerate}
+\item a fully INT8 model;
+\item a variant that keeps the $49\times49$ decay sub-graph in floating point.
+\end{enumerate}
+ST Edge AI Core compiles the model for the STM32N6570-DK (Cortex-M55 at 800\,MHz, Neural-ART NPU, 4.2\,MB on-chip RAM).
+
+We measure latency with on-target validation (mean, SD and p95 over 100 runs). Energy per inference is measured with \todo{STLINK-V3PWR / X-NUCLEO-LPM01A} as $E=\frac{1}{n}\int V I\,dt$ over $n=100$ back-to-back inferences. Board/host agreement is measured on 1\,000 external patches.
+
+%% ------------------------------------------------------------------------------
+\section{Results}
+\subsection{Tier A: accuracy of teachers and baselines}
+\begin{table}[t]\centering\small
+\caption{Classification on CRC-VAL-HE-7K (external) and internal 3-fold CV, mean $\pm$ SD over 3 folds $\times$ 3 seeds. Params and GMACs at $224^2$; $^{\dagger}$GMACs as reported by the original authors.}
+\label{tab:tierA}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lrrcccc}
+\toprule
+Model & Params (M) & GMACs & CV Acc (\%) & Ext Acc (\%) & Ext macro-F1 & Ext MCC \\
+\midrule
+VMamba-T & 30.0 & 4.9$^{\dagger}$ & \XX & \XX & \XX & \XX \\
+MambaVision-T & 31.8 & 4.4$^{\dagger}$ & \XX & \XX & \XX & \XX \\
+MambaVision-T2 & 35.1 & 5.1$^{\dagger}$ & \XX & \XX & \XX & \XX \\
+MambaVision-S & 50.1 & 7.5$^{\dagger}$ & \XX & \XX & \XX & \XX \\
+ConvNeXt V2-T & 28.6 & 4.5 & \XX & \XX & \XX & \XX \\
+Swin-T & 28.3 & 4.5 & \XX & \XX & \XX & \XX \\
+EfficientViT-B1 & 9.1 & 0.5 & \XX & \XX & \XX & \XX \\
+ResNet-50 & 25.6 & 4.1 & \XX & \XX & \XX & \XX \\
+MobileNetV4-Conv-M & 9.7 & 1.0 & \XX & \XX & \XX & \XX \\
+MobileNetV3-Small & 2.5 & 0.06 & \XX & \XX & \XX & \XX \\
+\midrule
+MicroPathMamba-CNN (no SSM) & \XX & \XX & \XX & \XX & \XX & \XX \\
+MicroPathMamba (scratch) & 0.95 & \XX & \XX & \XX & \XX & \XX \\
+\textbf{MicroPathMamba (KD)} & \textbf{0.95} & \XX & \XX & \XX & \XX & \XX \\
+\bottomrule
+\end{tabular}}
+\end{table}
+\todo{Check every parameter/GMAC value against \texttt{results/complexity.csv}; the published figures above are for 1000-class ImageNet heads.} Describe:
+\begin{itemize}
+\item the ranking on the external set;
+\item whether the Mamba teachers beat the CNN and Transformer baselines significantly (McNemar);
+\item the gap between internal CV and external accuracy;
+\item calibration (ECE), per-class F1 and confusion patterns (STR/DEB/MUS);
+\item Grad-CAM maps~\cite{selvaraju2017gradcam}.
+\end{itemize}
+
+\subsection{Tier B: deployability on the STM32N6}
+\begin{table}[t]\centering\small
+\caption{ST Edge AI Core analysis for the STM32N6 Neural-ART target (INT8, $224^2$).}
+\label{tab:tierB}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+Model & Status & Weights (MB) & Activ. (MB) & Fits 4.2\,MB & NPU epochs (\%) & Fallback ops \\
+\midrule
+VMamba-T & \XX & \XX & \XX & \XX & \XX & \XX \\
+MambaVision-T & \XX & \XX & \XX & \XX & \XX & \XX \\
+MobileNetV3-Small & \XX & \XX & \XX & \XX & \XX & \XX \\
+MobileNetV4-Conv-M & \XX & \XX & \XX & \XX & \XX & \XX \\
+MicroPathMamba & \XX & \XX & \XX & \XX & \XX & \XX \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsection{Tier C: on-device performance}
+\begin{table}[t]\centering\small
+\caption{Measured on STM32N6570-DK (CPU 800\,MHz, NPU \XX\,MHz, ST Edge AI Core v\XX). Accuracy on CRC-VAL-HE-7K.}
+\label{tab:tierC}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lccccccc}
+\toprule
+Model & FP32 Acc & INT8 Acc & $\Delta$ & Latency (ms) & Energy (mJ) & RAM (MB) & Agree (\%) \\
+\midrule
+MobileNetV3-Small & \XX & \XX & \XX & \XX & \XX & \XX & \XX \\
+MobileNetV4-Conv-S & \XX & \XX & \XX & \XX & \XX & \XX & \XX \\
+MicroPathMamba-CNN & \XX & \XX & \XX & \XX & \XX & \XX & \XX \\
+MicroPathMamba (INT8) & \XX & \XX & \XX & \XX & \XX & \XX & \XX \\
+MicroPathMamba (decay FP) & \XX & \XX & \XX & \XX & \XX & \XX & \XX \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsection{Ablations}
+\todo{(i) number of SSM blocks 0/1/2/3; (ii) state size $N\in\{8,16,32\}$; (iii) causal vs bidirectional mixer; (iv) KD teacher: MambaVision-T vs VMamba-T vs ConvNeXt V2-T; (v) $\Delta$ parameterisation: sigmoid vs softplus under INT8.}
+
+%% ------------------------------------------------------------------------------
+\section{Discussion}
+\todo{Main message, written from the results:}
+\begin{itemize}
+\item what the full-size Mamba backbones gain on the external set;
+\item why they cannot be deployed as they stand;
+\item how much of their advantage distillation carries into a 1\,MB INT8 student;
+\item what this means for a microscope-attached screening aid.
+\end{itemize}
+\todo{Clinical framing:} decision support that flags suspicious regions, with the pathologist as the final authority.
+
+\paragraph{Limitations}
+\begin{itemize}
+\item The internal split is patch-level.
+\item External testing uses one public cohort.
+\item Patches are pre-normalised, so real microscope colour variation is not covered.
+\item Energy is measured for the inference kernel only, not for camera capture.
+\item Whole-slide aggregation is outside the scope of this work.
+\end{itemize}
+
+\section{Conclusion}
+\todo{3--4 sentences mirroring the abstract with the final numbers.}
+
+%% ------------------------------------------------------------------------------
+\section*{CRediT authorship contribution statement}
+\textbf{Kishor Ravikumar:} Conceptualization, Methodology, Software, Investigation, Formal analysis, Embedded implementation, Writing -- original draft. \textbf{R.\,S. Vinod Kumar:} Supervision, Methodology, Writing -- review \& editing. \textbf{Bushara A.\,R.:} Validation, Writing -- review \& editing. \textbf{Amarjith C.\,K.:} Software, Formal analysis, Writing -- review \& editing.
+
+\section*{Declaration of competing interest}
+The authors declare no known competing financial interests or personal relationships that could have influenced the work reported in this paper.
+
+\section*{Data and code availability}
+NCT-CRC-HE-100K and CRC-VAL-HE-7K are publicly available (Zenodo record 1214456). Code, trained weights, ONNX/INT8 models and ST Edge AI reports are available at \url{https://github.com/kishorravi/MicroPathMamba-STM32N6}.
+
+\section*{Declaration of generative AI use}
+\todo{Elsevier requires a statement if AI tools were used in preparing the manuscript; describe the use and confirm the authors reviewed and take responsibility for the content.}
+
+\bibliographystyle{elsarticle-num}
+\bibliography{references}
+\end{document}
