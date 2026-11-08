@@ -1,0 +1,19 @@
+{
+  "_how_to_use": "Copy to results/stm32_measurements.json and replace null with your measured values. Leave null for anything not measured yet; it stays XX in the paper.",
+  "st_edge_ai_version": null,
+  "npu_mhz": null,
+  "deployability": {
+    "vmamba_t":       {"status": null, "weights_mb": null, "activations_mb": null, "weights_internal": false, "npu_epochs_pct": null, "fallback_ops": null},
+    "mambavision_t":  {"status": null, "weights_mb": null, "activations_mb": null, "weights_internal": false, "npu_epochs_pct": null, "fallback_ops": null},
+    "mobilenetv3_s":  {"status": null, "weights_mb": null, "activations_mb": null, "weights_internal": true,  "npu_epochs_pct": null, "fallback_ops": null},
+    "mobilenetv4_m":  {"status": null, "weights_mb": null, "activations_mb": null, "weights_internal": true,  "npu_epochs_pct": null, "fallback_ops": null},
+    "micropathmamba": {"status": null, "weights_mb": null, "activations_mb": null, "weights_internal": true,  "npu_epochs_pct": null, "fallback_ops": null}
+  },
+  "on_device": {
+    "mobilenetv3_s":          {"fp32_acc": null, "int8_acc": null, "int8_metrics": "results/mobilenetv3_s_int8/metrics.json", "latency_ms": null, "latency_sd_ms": null, "energy_mj": null, "ram_mb": null, "agreement_pct": null},
+    "mobilenetv4_s":          {"fp32_acc": null, "int8_acc": null, "latency_ms": null, "latency_sd_ms": null, "energy_mj": null, "ram_mb": null, "agreement_pct": null},
+    "micropathmamba_cnn":     {"fp32_acc": null, "int8_acc": null, "latency_ms": null, "latency_sd_ms": null, "energy_mj": null, "ram_mb": null, "agreement_pct": null},
+    "micropathmamba_int8":    {"fp32_acc": null, "int8_acc": null, "int8_metrics": "results/student_int8/metrics.json", "latency_ms": null, "latency_sd_ms": null, "energy_mj": null, "ram_mb": null, "agreement_pct": null},
+    "micropathmamba_decayfp": {"fp32_acc": null, "int8_acc": null, "int8_metrics": "results/student_int8_decayfp/metrics.json", "latency_ms": null, "latency_sd_ms": null, "energy_mj": null, "ram_mb": null, "agreement_pct": null}
+  }
+}

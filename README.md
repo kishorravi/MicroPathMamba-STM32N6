@@ -6,11 +6,11 @@ Code for the three-tier study:
 |---|---|---|
 | **A** | How do VMamba-T and MambaVision T/T2/S compare with size-matched CNN/Transformer baselines? | Accuracy, MCC, AUC, ECE (internal 3-fold CV + external CRC-VAL-HE-7K), params, GFLOPs, GPU latency |
 | **B** | Can these models be deployed on the STM32N6 at all? | ST Edge AI analysis: memory, NPU vs CPU operator mapping, failure modes |
-| **C** | Can a small Mamba keep the accuracy and run on the NPU? | **MicroPathMamba** (~0.95 M params, ~1 MB INT8), distilled from the best teacher; measured on-board latency, energy, RAM, INT8 drop |
+| **C** | Can a small Mamba keep the accuracy and run on the NPU? | **MicroPathMamba** (2.35 M params, ~2.3 MB INT8, ImageNet-pretrained MobileNetV2 backbone), distilled from the best teacher; measured on-board latency, energy, RAM, INT8 drop |
 
 ## The student: MicroPathMamba
 
-- **Stages 1–4:** MobileNetV2-style inverted residual convolutions with BatchNorm and ReLU6, which map to the NPU.
+- **Backbone:** ImageNet-pretrained MobileNetV2-1.0 features (inverted residuals, BatchNorm, ReLU6), which map to the NPU, then a 1×1 projection to 160 channels.
 - **Stage 5:** two MambaVision-style blocks running on 7 × 7 = 49 tokens. The selective scan is written in **matrix (state-space-duality) form**:
 
   `Y = (exp(-|c_i − c_j|) ⊙ C Bᵀ) (Δ ⊙ X)`, with `c = (Δ·A) @ triu(1)`
@@ -26,7 +26,7 @@ conda create -n mambapath python=3.10 -y && conda activate mambapath
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt          # mamba-ssm builds CUDA kernels: Linux + NVIDIA GPU
 python tests/test_ssd_equivalence.py     # sanity check
-python -m models.micropathmamba          # prints parameter count and output shape
+python -m models.micropathmamba          # prints parameter count (2.35 M) and output shape
 ```
 
 Datasets (Kather et al., 2019, Zenodo record 1214456):
@@ -37,6 +37,8 @@ Datasets (Kather et al., 2019, Zenodo record 1214456):
 Optionally, `NCT-CRC-HE-100K-NONORM` (not stain-normalised) supports a stain-robustness experiment.
 
 ## Run
+
+**Start with [`EXPERIMENTS.md`](EXPERIMENTS.md)**. Training runs on a free Kaggle GPU (`kaggle/micropathmamba_kaggle.ipynb`); the Mac script `scripts/mac_run.sh` handles checks, INT8 and the manuscript: a phased plan (smoke test → first numbers → full grid → STM32). After each phase, `python scripts/fill_manuscript.py` writes the real results into `paper/tables/*.tex` and the abstract numbers (`paper/results_macros.tex`).
 
 `run_all.sh` lists every run in order. Main entry points:
 

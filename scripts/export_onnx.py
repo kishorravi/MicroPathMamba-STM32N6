@@ -3,6 +3,7 @@
 python scripts/export_onnx.py --model micropathmamba --ckpt runs/.../best.pt --out deploy/student_fp32.onnx
 """
 import argparse
+import warnings
 import sys
 from pathlib import Path
 
@@ -19,6 +20,8 @@ ap.add_argument("--out", default="deploy/student_fp32.onnx")
 ap.add_argument("--img", type=int, default=224)
 ap.add_argument("--opset", type=int, default=17)
 a = ap.parse_args()
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message="Converting a tensor to a Python boolean")
 
 m = build_model(a.model, 9, pretrained=False)
 m.load_state_dict(torch.load(a.ckpt, map_location="cpu"))

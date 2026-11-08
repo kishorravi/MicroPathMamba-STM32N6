@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from common import CLASSES, PatchDataset, all_metrics, eval_tf, list_folder, predict, save_json
+from common import CLASSES, PatchDataset, all_metrics, eval_tf, get_device, list_folder, predict, save_json
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -42,24 +42,30 @@ def plot_cm(cm, path):
     fig.tight_layout(); fig.savefig(path, dpi=300); plt.close(fig)
 
 
-ap = argparse.ArgumentParser()
-ap.add_argument("--model"); ap.add_argument("--ckpt"); ap.add_argument("--onnx")
-ap.add_argument("--data", required=True); ap.add_argument("--out", required=True)
-ap.add_argument("--img", type=int, default=224); ap.add_argument("--bs", type=int, default=128)
-a = ap.parse_args()
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model"); ap.add_argument("--ckpt"); ap.add_argument("--onnx")
+    ap.add_argument("--data", required=True); ap.add_argument("--out", required=True)
+    ap.add_argument("--img", type=int, default=224); ap.add_argument("--bs", type=int, default=128)
+    ap.add_argument("--workers", type=int, default=4)
+    a = ap.parse_args()
 
-dl = DataLoader(PatchDataset(list_folder(a.data), eval_tf(a.img)), a.bs, num_workers=8)
-if a.onnx:
-    probs, ys = onnx_predict(a.onnx, dl)
-else:
-    from models import build_model
-    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    m = build_model(a.model, 9, pretrained=False)
-    m.load_state_dict(torch.load(a.ckpt, map_location="cpu"))
-    probs, ys = predict(m.to(dev), dl, dev)
-out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
-np.savez_compressed(out / "preds.npz", probs=probs, labels=ys)
-res = all_metrics(probs, ys)
-save_json(res, out / "metrics.json")
-plot_cm(res["confusion_matrix"], out / "confusion_matrix.png")
-print({k: round(v, 4) for k, v in res.items() if isinstance(v, float)})
+    dl = DataLoader(PatchDataset(list_folder(a.data), eval_tf(a.img)), a.bs, num_workers=a.workers)
+    if a.onnx:
+        probs, ys = onnx_predict(a.onnx, dl)
+    else:
+        from models import build_model
+        dev = get_device()
+        m = build_model(a.model, 9, pretrained=False)
+        m.load_state_dict(torch.load(a.ckpt, map_location="cpu"))
+        probs, ys = predict(m.to(dev), dl, dev)
+    out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(out / "preds.npz", probs=probs, labels=ys)
+    res = all_metrics(probs, ys)
+    save_json(res, out / "metrics.json")
+    plot_cm(res["confusion_matrix"], out / "confusion_matrix.png")
+    print({k: round(v, 4) for k, v in res.items() if isinstance(v, float)})
+
+
+if __name__ == "__main__":   # required on macOS/Windows (spawned DataLoader workers)
+    main()

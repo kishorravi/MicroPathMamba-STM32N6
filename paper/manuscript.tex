@@ -32,7 +32,7 @@
 Vision Mamba models capture long-range tissue context in time that grows only linearly with the number of patches. However, they depend on custom GPU kernels, and it is unclear whether they can run on the low-cost microcontrollers that portable digital-microscopy devices need. We study this question end to end for nine-class colorectal histopathology tissue classification.
 First, we benchmark VMamba-T and three MambaVision variants (T, T2, S) against size-matched convolutional and Transformer baselines. We use identical stratified three-fold cross-validation on NCT-CRC-HE-100K and external testing on the patient-independent CRC-VAL-HE-7K set, with three seeds per model.
 Second, we analyse whether every model can be deployed on the STM32N6 microcontroller and its Neural-ART neural processing unit (NPU), recording memory, operator mapping and failure modes. Off-the-shelf Mamba backbones need \resMambaWeightsMB\,MB of INT8 weights against 4.2\,MB of on-chip RAM, and \resMambaFallbackPct\% of their compute epochs fall back to the CPU.
-Third, we propose MicroPathMamba, a 0.95\,M-parameter hybrid network. In its MambaVision-style mixer, the bidirectional selective scan is rewritten in a static matrix (state-space-duality) form that uses only matrix multiplication and element-wise operators; we prove this form is exactly equivalent to the recurrence. Distilled from the best Mamba teacher and quantized to INT8, MicroPathMamba reaches \resStudentExtAcc\% accuracy and \resStudentExtFone{} macro-F1 on CRC-VAL-HE-7K (\resStudentIntEightAcc\% after INT8 quantization), versus \resTeacherExtAcc\% for its \resTeacherName{} teacher. On the STM32N6570-DK it runs in \resStudentLatency\,ms using \resStudentEnergy\,mJ per patch and \resStudentRAM\,MB of RAM.
+Third, we propose MicroPathMamba, a \resStudentParams\,M-parameter hybrid network built on an ImageNet-pretrained MobileNetV2 backbone. In its MambaVision-style mixer, the bidirectional selective scan is rewritten in a static matrix (state-space-duality) form that uses only matrix multiplication and element-wise operators; we prove this form is exactly equivalent to the recurrence. Distilled from the best Mamba teacher and quantized to INT8, MicroPathMamba reaches \resStudentExtAcc\% accuracy and \resStudentExtFone{} macro-F1 on CRC-VAL-HE-7K (\resStudentIntEightAcc\% after INT8 quantization), versus \resTeacherExtAcc\% for its \resTeacherName{} teacher. On the STM32N6570-DK it runs in \resStudentLatency\,ms using \resStudentEnergy\,mJ per patch and \resStudentRAM\,MB of RAM.
 These results show that the accuracy benefit of state-space models can be carried down to a microcontroller-class NPU for point-of-care histopathology screening.
 \end{abstract}
 
@@ -78,7 +78,7 @@ We create one stratified three-fold split (seed 123) and reuse it for every mode
 We report accuracy, balanced accuracy, macro precision, recall, specificity and F1, Matthews correlation coefficient (MCC), Cohen's $\kappa$, one-vs-rest macro AUC and expected calibration error (ECE, 15 bins)~\cite{guo2017calibration}. Results are given as mean $\pm$ SD over folds and seeds. On the external set we add bootstrap 95\% confidence intervals (2\,000 resamples) and an exact McNemar test against the deployed student~\cite{dietterich1998}.
 
 \subsection{Teachers and baselines (Tier A)}
-The Mamba teachers are VMamba-T~\cite{liu2024vmamba} and MambaVision-T, -T2 and -S~\cite{hatamizadeh2025mambavision}. The size-matched baselines are ConvNeXt~V2-T~\cite{woo2023convnextv2}, Swin-T~\cite{liu2021swin}, EfficientViT-B1~\cite{cai2023efficientvit} and ResNet-50~\cite{he2016resnet}. The microcontroller-class baselines are MobileNetV4-Conv-M~\cite{qin2024mobilenetv4} and MobileNetV3-Small~\cite{howard2019mobilenetv3}. All start from ImageNet-1k weights.
+The Mamba teachers are VMamba-T~\cite{liu2024vmamba} and MambaVision-T, -T2 and -S~\cite{hatamizadeh2025mambavision}. The size-matched baselines are ConvNeXt~V2-T~\cite{woo2023convnextv2}, Swin-T~\cite{liu2021swin}, EfficientViT-B1~\cite{cai2023efficientvit} and ResNet-50~\cite{he2016resnet}. The microcontroller-class baselines are MobileNetV4-Conv-M~\cite{qin2024mobilenetv4} and MobileNetV3-Small~\cite{howard2019mobilenetv3}. All of them, and the student backbone, start from ImageNet-1k weights.
 
 Every model shares one training recipe: AdamW (learning rate $3\times10^{-4}$, weight decay 0.05), a one-cycle schedule, 30 epochs with early stopping (patience 8) on validation loss, batch size 64, label smoothing 0.1, mixed precision, and identical augmentation (random resized crop at scale 0.8--1, horizontal and vertical flips, $90^\circ$ rotation, mild colour jitter).
 
@@ -118,7 +118,7 @@ Equation~\eqref{eq:bi} replaces the recurrence and the cumulative-sum operator w
 \paragraph{Architecture}
 MicroPathMamba (Fig.~\ref{fig:arch}) has two parts:
 \begin{itemize}
-\item \textbf{Convolutional stages.} A MobileNetV2-style stem and inverted-residual stages~\cite{sandler2018mobilenetv2} (BatchNorm, ReLU6) reduce the $224\times224$ input to a $7\times7\times160$ map.
+\item \textbf{Convolutional stages.} The feature extractor of an ImageNet-pretrained MobileNetV2-1.0~\cite{sandler2018mobilenetv2} (inverted residuals, BatchNorm, ReLU6, 1.81\,M parameters) reduces the $224\times224$ input to a $7\times7\times320$ map, which a $1\times1$ convolution projects to 160 channels. Pretraining puts the student on the same footing as the ImageNet-initialised baselines, and MobileNetV2 blocks are a native workload for the STM32N6 NPU.
 \item \textbf{Mamba blocks.} Two MambaVision-style blocks follow. Each block applies BatchNorm, a $1\times1$ projection into two halves, and a $3\times3$ depthwise convolution with SiLU on each half. One half passes through the SSD mixer~\eqref{eq:bi} (4 heads, state size $N=16$). The other half takes a symmetric non-SSM branch, as in MambaVision~\cite{hatamizadeh2025mambavision}. The halves are concatenated, projected back with a $1\times1$ convolution, and followed by a convolutional MLP.
 \end{itemize}
 
@@ -128,7 +128,7 @@ Three choices make the network quantization-friendly:
 \item the step size is bounded as $\Delta=\Delta_{\max}\,\sigma(\cdot)$ with $\Delta_{\max}=0.5$, instead of softplus;
 \item $A=-e^{A_{\log}}$ is constant-folded at export.
 \end{itemize}
-The network has 0.95\,M parameters (about 1\,MB at INT8). An ablation without the SSM blocks (\emph{MicroPathMamba-CNN}) isolates their contribution.
+The network has \resStudentParams\,M parameters (\resStudentIntEightMB\,MB of INT8 weights). Two ablations isolate the design choices: the same network without the SSM blocks (\emph{MicroPathMamba-CNN}), and a 0.95\,M-parameter variant with a smaller backbone trained from scratch (\emph{MicroPathMamba-tiny}).
 
 \begin{figure}[t]\centering
 \fbox{\parbox{0.9\linewidth}{\centering\vspace{2.5cm}\todo{Fig.~1: architecture diagram (CNN stages $\rightarrow$ 2$\times$ SSD-Mamba blocks $\rightarrow$ head) with the matrix-form mixer inset}\vspace{2.5cm}}}
@@ -193,7 +193,7 @@ We measure latency with on-target validation (mean, SD and p95 over 100 runs). E
 \begin{itemize}
 \item what the full-size Mamba backbones gain on the external set;
 \item why they cannot be deployed as they stand;
-\item how much of their advantage distillation carries into a 1\,MB INT8 student;
+\item how much of their advantage distillation carries into a \resStudentIntEightMB\,MB INT8 student;
 \item what this means for a microscope-attached screening aid.
 \end{itemize}
 \todo{Clinical framing:} decision support that flags suspicious regions, with the pathologist as the final authority.
