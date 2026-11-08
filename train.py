@@ -22,12 +22,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from common import PatchDataset, all_metrics, eval_tf, list_folder, predict, save_json, train_tf
+from common import PatchDataset, all_metrics, eval_tf, get_device, list_folder, predict, save_json, train_tf
 from models import build_model
 
 
 def seed_all(s):
     random.seed(s); np.random.seed(s); torch.manual_seed(s); torch.cuda.manual_seed_all(s)
+
+
+def per_class(df, total):
+    """Stratified subset with `total` patches (smoke tests)."""
+    k = min(max(1, total // 9), int(df.label.value_counts().min()))
+    return df.groupby("label").sample(n=k, random_state=0)
 
 
 def kd_loss(s_logits, t_logits, y, T=4.0, alpha=0.7, ls=0.1):
@@ -57,19 +63,27 @@ def main():
     ap.add_argument("--kd-T", type=float, default=4.0)
     ap.add_argument("--kd-alpha", type=float, default=0.7)
     ap.add_argument("--out", default="runs")
+    ap.add_argument("--limit-train", type=int, default=0, help="smoke test: use only N training patches")
+    ap.add_argument("--limit-val", type=int, default=0, help="smoke test: use only N val/external patches")
     a = ap.parse_args()
 
     seed_all(a.seed)
-    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dev = get_device()
+    print("device:", dev, flush=True)
     tag = f"{a.model}{'_kd-' + a.teacher if a.teacher else ''}"
     out = Path(a.out) / tag / f"f{a.fold}_s{a.seed}"
     out.mkdir(parents=True, exist_ok=True)
 
     folds = pd.read_csv(a.folds)
     tr, va = folds[folds.fold != a.fold], folds[folds.fold == a.fold]
+    if a.limit_train:
+        tr = per_class(tr, a.limit_train)
+        out = Path(a.out + "_smoke") / tag / f"f{a.fold}_s{a.seed}"; out.mkdir(parents=True, exist_ok=True)
+    if a.limit_val:
+        va = per_class(va, a.limit_val)
     dl_tr = DataLoader(PatchDataset(tr, train_tf(a.img)), a.bs, shuffle=True, num_workers=a.workers,
-                       pin_memory=True, drop_last=True, persistent_workers=a.workers > 0)
-    dl_va = DataLoader(PatchDataset(va, eval_tf(a.img)), a.bs * 2, num_workers=a.workers, pin_memory=True)
+                       pin_memory=dev.type == "cuda", drop_last=True, persistent_workers=a.workers > 0)
+    dl_va = DataLoader(PatchDataset(va, eval_tf(a.img)), a.bs * 2, num_workers=a.workers, pin_memory=dev.type == "cuda")
 
     model = build_model(a.model, 9, pretrained=not a.no_pretrained).to(dev)
     teacher = None
@@ -83,7 +97,7 @@ def main():
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=a.wd)
     steps = a.epochs * len(dl_tr)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, a.lr, total_steps=steps, pct_start=0.05)
-    scaler = torch.cuda.amp.GradScaler(enabled=dev.type == "cuda")
+    scaler = torch.amp.GradScaler("cuda", enabled=dev.type == "cuda")
 
     best, wait, hist = 1e9, 0, []
     for ep in range(a.epochs):
@@ -124,6 +138,8 @@ def main():
     res = {"internal_cv": all_metrics(probs, ys)}
     if a.ext:
         ext = list_folder(a.ext)
+        if a.limit_val:
+            ext = per_class(ext, a.limit_val)
         dl_ext = DataLoader(PatchDataset(ext, eval_tf(a.img)), a.bs * 2, num_workers=a.workers)
         p2, y2 = predict(model, dl_ext, dev)
         np.savez_compressed(out / "ext_preds.npz", probs=p2, labels=y2)

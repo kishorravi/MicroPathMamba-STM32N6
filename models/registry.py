@@ -30,9 +30,9 @@ MAMBAVISION = {
     "mambavision_b": "mambavision_base_1k",
 }
 STUDENTS = {
-    "micropathmamba": dict(width=1.0),
-    "micropathmamba_w15": dict(width=1.5),
-    "micropathmamba_cnn": dict(width=1.0, depth_ssm=0),   # ablation: same student without SSM blocks
+    "micropathmamba": dict(backbone="mnv2"),                    # ImageNet-pretrained MobileNetV2 + 2 SSD-Mamba blocks
+    "micropathmamba_cnn": dict(backbone="mnv2", depth_ssm=0),   # ablation: same student without SSM blocks
+    "micropathmamba_tiny": dict(backbone="custom"),             # ablation: 0.95 M from-scratch backbone
 }
 
 
@@ -50,7 +50,7 @@ def _replace_head(m: nn.Module, num_classes: int) -> nn.Module:
 
 def build_model(name: str, num_classes: int = 9, pretrained: bool = True) -> nn.Module:
     if name in STUDENTS:
-        return micropathmamba(num_classes=num_classes, **STUDENTS[name])
+        return micropathmamba(num_classes=num_classes, pretrained=pretrained, **STUDENTS[name])
     if name in TIMM:
         import timm
         return timm.create_model(TIMM[name], pretrained=pretrained, num_classes=num_classes)

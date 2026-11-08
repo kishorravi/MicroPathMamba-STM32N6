@@ -116,30 +116,50 @@ class MambaBlock(nn.Module):
 
 
 class MicroPathMamba(nn.Module):
-    """~1-3 M parameter hybrid CNN + SSD-Mamba classifier for 224x224 H&E patches."""
+    """Hybrid CNN + SSD-Mamba classifier for 224x224 H&E patches.
 
-    def __init__(self, num_classes=9, width=1.0, img_size=224, depth_ssm=2, d_state=16, heads=4):
+    backbone="mnv2"   : ImageNet-pretrained MobileNetV2-1.0 features (timm, stride 32, 320 ch),
+                        1x1 projection to `dim`, then `depth_ssm` SSD-Mamba blocks (~2.3 M params).
+    backbone="custom" : the original 0.95 M-parameter from-scratch backbone (ablation).
+    depth_ssm=0 gives the same network without SSM blocks (ablation "MicroPathMamba-CNN").
+    """
+
+    def __init__(self, num_classes=9, width=1.0, img_size=224, depth_ssm=2, d_state=16, heads=4,
+                 backbone="mnv2", dim=160, pretrained=True):
         super().__init__()
 
         def ch(c):
             return max(8, int(math.ceil(c * width / 8) * 8))
 
-        # (expand, out, repeats, stride) - MobileNetV2-like schedule
-        cfg = [(1, 16, 1, 1), (4, 24, 2, 2), (4, 40, 2, 2), (4, 80, 3, 2), (4, 112, 2, 1), (4, 160, 1, 2)]
-        layers = [conv_bn_act(3, ch(16), 3, 2)]
-        cin = ch(16)
-        for e, c, n, s in cfg:
-            for i in range(n):
-                layers.append(InvertedResidual(cin, ch(c), s if i == 0 else 1, e))
-                cin = ch(c)
-        self.features = nn.Sequential(*layers)
+        self.backbone = backbone
+        if backbone == "mnv2":
+            import timm   # MobileNetV2 inverted residuals + ReLU6: standard STM32N6 NPU workload
+            self.features = timm.create_model("mobilenetv2_100.ra_in1k", pretrained=pretrained,
+                                              features_only=True, out_indices=(4,))
+            cin = self.features.feature_info.channels()[-1]             # 320
+            self.proj = conv_bn_act(cin, dim, 1)
+            cin = dim
+        else:
+            # (expand, out, repeats, stride) - MobileNetV2-like schedule, trained from scratch
+            cfg = [(1, 16, 1, 1), (4, 24, 2, 2), (4, 40, 2, 2), (4, 80, 3, 2), (4, 112, 2, 1), (4, 160, 1, 2)]
+            layers = [conv_bn_act(3, ch(16), 3, 2)]
+            cin = ch(16)
+            for e, c, n, s in cfg:
+                for i in range(n):
+                    layers.append(InvertedResidual(cin, ch(c), s if i == 0 else 1, e))
+                    cin = ch(c)
+            self.features = nn.Sequential(*layers)
+            self.proj = nn.Identity()
         tokens = (img_size // 32) ** 2                                  # 49 for 224 input
         self.ssm = nn.Sequential(*[MambaBlock(cin, tokens, d_state, heads) for _ in range(depth_ssm)])
         self.head = nn.Sequential(conv_bn_act(cin, ch(320), 1), nn.AdaptiveAvgPool2d(1), nn.Flatten(),
                                   nn.Dropout(0.2), nn.Linear(ch(320), num_classes))
 
     def forward_features(self, x):
-        return self.ssm(self.features(x))
+        f = self.features(x)
+        if isinstance(f, (list, tuple)):
+            f = f[-1]
+        return self.ssm(self.proj(f))
 
     def forward(self, x):
         return self.head(self.forward_features(x))
@@ -150,7 +170,7 @@ def micropathmamba(num_classes=9, **kw):
 
 
 if __name__ == "__main__":
-    m = micropathmamba().eval()
+    m = micropathmamba(pretrained=False).eval()
     n = sum(p.numel() for p in m.parameters())
     with torch.no_grad():
         out = m(torch.randn(2, 3, 224, 224))

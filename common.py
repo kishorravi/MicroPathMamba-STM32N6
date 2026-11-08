@@ -88,6 +88,15 @@ def all_metrics(probs: np.ndarray, labels: np.ndarray) -> dict:
     return {k: (float(v) if isinstance(v, (np.floating, float)) else v) for k, v in out.items()}
 
 
+def get_device() -> torch.device:
+    """CUDA (NVIDIA) > MPS (Apple Silicon GPU) > CPU."""
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 @torch.no_grad()
 def predict(model, loader, device, amp=True):
     model.eval()
